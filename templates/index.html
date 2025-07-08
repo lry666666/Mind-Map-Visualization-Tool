@@ -1,0 +1,2161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>思维导图可视化工具</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;700&display=swap');
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            /* overflow: hidden; */ /* Allow page scrolling */
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            text-align: center;
+            color: #1a237e;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        #visualization {
+            border: 1px solid #d9d9d9;
+            height: 60vh;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        #visualization.connection-mode {
+            cursor: crosshair;
+        }
+
+        #visualization:active {
+            cursor: grabbing;
+        }
+
+        #canvas-world {
+            position: absolute;
+            transform-origin: 0 0;
+        }
+
+        .box {
+            position: absolute;
+            border: 1px solid #b0bec5;
+            background: #ffffff;
+            cursor: move;
+            -webkit-user-select: none;
+            user-select: none;
+            min-width: 220px;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            overflow: visible;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transition: box-shadow 0.3s ease, border-color 0.3s ease, opacity 0.5s ease, filter 0.5s ease;
+            padding: 15px;
+        }
+        
+        .box.connection-start {
+            border-color: #43a047;
+            box-shadow: 0 8px 24px rgba(67,160,71,0.3);
+        }
+
+        .box.selected {
+            border-color: #1e88e5;
+            box-shadow: 0 8px 24px rgba(2, 118, 210, 0.3);
+        }
+
+        .resize-handle {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            right: -10px;
+            bottom: -10px;
+            cursor: nw-resize;
+            z-index: 10;
+            background: transparent;
+            border-radius: 50%;
+        }
+
+        .box.selected .resize-handle {
+            background: #1e88e5;
+            border: 2px solid white;
+        }
+
+        .connection-handle {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: #78909c;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            cursor: crosshair;
+            top: 50%;
+            right: -8px; /* Position it halfway out the right edge */
+            transform: translateY(-50%);
+            z-index: 10;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: background-color 0.3s ease;
+        }
+
+        .connection-handle:hover {
+            background-color: #1e88e5;
+        }
+
+        .box-title {
+            font-weight: 700;
+            font-size: 1.1em;
+            margin-bottom: 8px;
+            cursor: text;
+            color: #1a237e;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .box-brief {
+            font-size: 0.9em;
+            color: #546e7a;
+            margin-bottom: 8px;
+            cursor: text;
+            flex-grow: 1; /* Allow brief to take up space */
+        }
+
+        .box-content {
+            font-size: 0.9em;
+            display: none;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #cfd8dc;
+            color: #37474f;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .box-relations {
+            display: none;
+            font-size: 0.8em;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .box.selected .box-relations {
+            display: block;
+        }
+
+        .box-relations h4 {
+            margin: 0 0 5px 0;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .box-relations div {
+            padding-left: 10px;
+            color: #555;
+        }
+
+        .box:hover .box-content {
+            display: block;
+        }
+
+        .box.selected.resizing {
+            cursor: nw-resize;
+        }
+
+        .box.connecting {
+            border-color: #43a047;
+        }
+
+        .line {
+            position: absolute;
+            fill: none;
+            stroke-width: 2px;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: stroke 0.3s ease, opacity 0.5s ease, filter 0.5s ease;
+        }
+
+        .line-hitbox {
+            stroke-width: 10px;
+            stroke: transparent;
+            fill: none;
+            pointer-events: stroke;
+            cursor: pointer;
+            transition: opacity 0.5s ease, filter 0.5s ease;
+        }
+
+        .line.selected {
+            stroke-width: 3px;
+        }
+        
+        .line-handle {
+            r: 6;
+            fill: #1e88e5;
+            stroke: #fff;
+            stroke-width: 2px;
+            cursor: move;
+            pointer-events: all;
+        }
+
+        #arrow-head, #arrow-head-selected {
+            fill: #78909c;
+        }
+
+        #arrow-head-selected {
+            fill: #1e88e5;
+        }
+
+        #instructions {
+            margin-top: 20px;
+            padding: 15px;
+            border-top: 1px solid #d9d9d9;
+            background-color: #fff;
+            border-radius: 8px;
+        }
+
+        #instructions h2 {
+            margin-top: 0;
+            color: #1a237e;
+        }
+
+        #project-controls {
+            margin-top: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            padding-bottom: 20px; /* Add some space for the new search bar line */
+        }
+
+        #project-controls button, .custom-file-upload {
+            background-color: #1a237e;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            font-family: 'Noto Sans SC', sans-serif;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 0 10px;
+            display: inline-block;
+        }
+        
+        #project-controls button:hover, .custom-file-upload:hover {
+            background-color: #283593;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        #project-controls button.active {
+            background-color: #43a047;
+            box-shadow: 0 2px 8px rgba(67,160,71,0.4);
+        }
+
+        #relations-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 250px;
+            max-height: calc(100vh - 40px);
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 15px;
+            font-family: 'Noto Sans SC', sans-serif;
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        #relations-panel h3 {
+            margin-top: 0;
+            color: #1a237e;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+
+        #relations-panel h4 {
+            margin-top: 15px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        #relations-panel .relations-list {
+            padding-left: 10px;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        #svg-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .line-label {
+            font-family: 'Noto Sans SC', sans-serif;
+            font-size: 14px;
+            fill: #333;
+            pointer-events: none;
+            text-anchor: middle;
+            background: white;
+            padding: 2px 6px;
+        }
+
+        .line-label-bg {
+            /* 关键: 设置一个几乎不可见的填充，以便浏览器可以捕获鼠标事件 */
+            /* Key: Set a barely visible fill so the browser can capture mouse events */
+            fill: white;
+            fill-opacity: 0.01;
+            stroke: none;
+        }
+
+        .line-label-handle {
+            r: 8;
+            fill: #007bff;
+            fill-opacity: 0.7;
+            stroke: white;
+            stroke-width: 2px;
+            cursor: move;
+            visibility: hidden; /* Hide by default */
+        }
+
+        /* Show handle when hovering over the line hitbox or the handle itself */
+        .line-hitbox:hover + .line-label-handle,
+        .line-label-handle:hover {
+            visibility: visible;
+        }
+
+        #toast-notification {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s;
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+
+        #toast-notification.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        #maps-panel {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            width: 200px;
+            max-height: calc(60vh - 40px);
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 15px;
+            font-family: 'Noto Sans SC', sans-serif;
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        #maps-panel h3 {
+            margin-top: 0;
+            color: #1a237e;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+
+        #maps-panel ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #maps-panel li {
+            padding: 8px 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
+            word-wrap: break-word;
+        }
+
+        #maps-panel li:hover {
+            background-color: #f0f2f5;
+        }
+
+        #maps-panel li .delete-btn {
+            float: right;
+            background: #e53935;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            line-height: 20px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        #maps-panel li:hover .delete-btn {
+            opacity: 1;
+        }
+
+        #maps-panel .path-display {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: bold;
+            word-wrap: break-word;
+        }
+
+        #maps-panel .folder-icon, #maps-panel .file-icon, #maps-panel .back-icon {
+            margin-right: 8px;
+        }
+
+        .focus-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background-color: #ffc107;
+            color: #333;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            font-size: 14px;
+            cursor: pointer;
+            display: none; /* Hidden by default */
+            place-items: center;
+            font-weight: bold;
+        }
+
+        .box.selected .focus-btn {
+            display: grid; /* Show on selected box */
+        }
+        
+        .focused {
+            /* Styles for highlighted nodes */
+            opacity: 1 !important;
+            filter: none !important;
+            border-width: 2px;
+        }
+
+        .dimmed {
+            /* Styles for faded out nodes */
+            opacity: 0.2;
+            filter: blur(1px);
+            transition: opacity 0.5s ease, filter 0.5s ease;
+        }
+
+        #clear-focus-btn {
+            display: none; /* Hidden by default */
+        }
+
+        #search-input {
+            padding: 9px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-family: 'Noto Sans SC', sans-serif;
+            vertical-align: middle;
+        }
+        
+        #search-results-panel {
+            position: absolute;
+            top: 80px;
+            left: 240px; /* Positioned next to the maps panel */
+            width: 250px;
+            max-height: calc(60vh - 40px);
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 15px;
+            font-family: 'Noto Sans SC', sans-serif;
+            overflow-y: auto;
+            overflow-x: visible; /* Allow tooltip to show outside */
+            z-index: 100;
+        }
+
+        #search-results-panel h3 {
+            margin-top: 0;
+            color: #1a237e;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+
+        #search-results-panel ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #search-results-panel li {
+            padding: 8px 5px;
+            border-radius: 4px;
+            word-wrap: break-word;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative; /* Needed for tooltip positioning */
+        }
+        
+        #search-results-panel li:hover {
+            background-color: #f0f2f5;
+        }
+
+        #search-results-panel li .result-actions button {
+            margin-left: 5px;
+            padding: 2px 5px;
+            font-size: 0.8em;
+            cursor: pointer;
+        }
+
+        .descendant-tooltip {
+            display: none;
+            position: absolute;
+            left: 100%;
+            top: 0;
+            width: auto; /* Let width grow with content */
+            min-width: 200px; /* But keep a minimum width */
+            background-color: #f9f9f9;
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 10px;
+            z-index: 101; /* Ensure it's above other elements */
+            max-height: 80vh; /* Limit height to 80% of the viewport height */
+            overflow-y: auto; /* Add scrollbar if content exceeds max-height */
+        }
+        
+        .descendant-tooltip h4 {
+            margin-top: 0;
+            margin-bottom: 5px;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .descendant-tooltip ul {
+            list-style: none;
+            padding-left: 1em;
+            margin: 4px 0;
+            position: relative;
+        }
+
+        .descendant-tooltip ul::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #ccc;
+        }
+        
+        .descendant-tooltip li {
+            padding: 3px 0 3px 1.2em; /* top right bottom left */
+            position: relative;
+            display: block; /* Ensure li takes up full width for proper layout */
+        }
+        
+        .descendant-tooltip li::before {
+            content: '—';
+            position: absolute;
+            left: 0;
+            top: 3px;
+            color: #777;
+        }
+        
+        #search-results-panel li:hover .descendant-tooltip {
+            display: block;
+        }
+
+    </style>
+</head>
+
+<body>
+    <h1>思维导图可视化工具</h1>
+
+    <div id="toast-notification"></div>
+    <div id="descendant-tooltip-global" class="descendant-tooltip"></div>
+
+    <div id="project-controls">
+        <button id="connect-btn">创建连线</button>
+        <button id="save-btn">保存项目</button>
+        <button id="export-html-btn">导出为HTML</button>
+        <button id="new-folder-btn">新建文件夹</button>
+        <button id="undo-btn">撤销 (Ctrl+Z)</button>
+        <button id="redo-btn">重做 (Ctrl+Y)</button>
+        <button id="clear-focus-btn">显示全部</button>
+        <div style="margin-top: 15px;">
+            <input type="text" id="search-input" placeholder="查找节点...">
+            <button id="search-btn">查找</button>
+            <button id="clear-search-btn" style="display: none;">清除查找</button>
+        </div>
+    </div>
+
+    <div id="visualization">
+        <svg id="svg-layer" width="100%" height="100%" style="position:absolute; top:0; left:0; pointer-events: none;">
+            <defs>
+                <marker id="arrow-head" viewBox="0 0 10 10" refX="8" refY="5"
+                    markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                </marker>
+                <marker id="arrow-head-selected" viewBox="0 0 10 10" refX="8" refY="5"
+                    markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                </marker>
+            </defs>
+            <g id="svg-group"></g>
+            <line id="preview-line" stroke-width="2" stroke="#43a047" stroke-dasharray="5,5" style="display: none; pointer-events: none;"/>
+        </svg>
+        <div id="canvas-world"></div>
+    </div>
+
+    <div id="maps-panel">
+        <div class="path-display">/</div>
+        <button onclick="createFolder()" style="width:100%; margin-bottom: 10px;">New Folder</button>
+        <h3>Saved Projects</h3>
+        <ul id="maps-list"></ul>
+    </div>
+
+    <div id="search-results-panel" style="display: none;">
+        <h3>查找结果</h3>
+        <ul id="search-results-list"></ul>
+    </div>
+
+    <div id="instructions">
+        <h2>操作指南</h2>
+        <ul>
+            <li><strong>创建节点:</strong> 在画布空白处双击。</li>
+            <li><strong>创建连线:</strong> 点击"创建连线"按钮，然后依次点击起始和目标节点。</li>
+            <li><strong>编辑内容:</strong> 双击节点的标题或简介进行编辑。双击连线可以添加或修改标签。</li>
+            <li><strong>移动画布:</strong> 在画布空白处按住并拖动。</li>
+            <li><strong>缩放画布:</strong> 按住 <kbd>Ctrl</kbd> 并滚动鼠标滚轮。</li>
+            <li><strong>移动节点/标签:</strong> 按住并拖动节点或连线标签进行移动。</li>
+            <li><strong>删除项目:</strong> 选中节点或连线，按 <kbd>Delete</kbd> 键。</li>
+            <li><strong>复制/粘贴:</strong> 选中一个节点，按 <kbd>Ctrl+C</kbd> 复制该节点及其子集，按 <kbd>Ctrl+V</kbd> 在鼠标位置粘贴。</li>
+            <li><strong>聚焦/取消:</strong> 选中节点后，点击右上角的 "F" 按钮可聚焦其父集和子集。点击"显示全部"按钮或画布空白处可取消聚焦。</li>
+            <li><strong>撤销/重做:</strong> 按 <kbd>Ctrl+Z</kbd> 撤销，<kbd>Ctrl+Y</kbd> 重做。</li>
+        </ul>
+    </div>
+
+    <script>
+        const visualization = document.getElementById('visualization');
+        const world = document.getElementById('canvas-world');
+        const svgLayer = document.getElementById('svg-layer');
+        const svgGroup = document.getElementById('svg-group');
+        const previewLine = document.getElementById('preview-line');
+        let tooltipHideTimeout;
+
+        let boxes = []; // Stores {element, id, title, brief, content, resizeObserver}
+        let lines = []; // Stores {element: lineEl, startBoxId: number, endBoxId: number}
+        let nextBoxId = 1;
+
+        // State management
+        let selectedItem = null;      // For deletion: { type: 'box'|'line', element: el }
+        let startNodeForConnection = null; // For making connections: an element
+        let clipboard = null; // For copy-paste
+        const view = { scale: 1, x: 0, y: 0 };
+        let mousePosition = { x: 0, y: 0 }; // Track mouse position for pasting
+        let isFocusModeActive = false;
+        let isConnectionModeActive = false;
+
+        // Undo/Redo History
+        let history = [];
+        let historyIndex = -1;
+        const MAX_HISTORY = 50;
+        let actionCounter = 0;
+
+        // --- Project Persistence & Folder Management ---
+        let currentPath = '';
+
+        async function createFolder() {
+            const folderName = prompt("Enter new folder name:");
+            if (!folderName || folderName.includes('/') || folderName.includes('\\')) {
+                alert("Invalid folder name.");
+                return;
+            }
+
+            try {
+                const response = await fetch('/create_folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: currentPath, folder_name: folderName })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    loadMapsList(currentPath);
+                } else {
+                    alert(`Failed to create folder: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Create folder error:', error);
+                alert('Network error while creating folder.');
+            }
+        }
+
+        async function saveProject() {
+            const projectData = {
+                boxes: boxes.map(b => ({ id: b.id, left: b.element.style.left, top: b.element.style.top, width: b.element.style.width, height: b.element.style.height, title: b.title, brief: b.brief, content: b.content })),
+                lines: lines.map(l => ({ startBoxId: l.startBoxId, endBoxId: l.endBoxId, curvature: l.curvature, label: l.label })),
+                nextBoxId: nextBoxId,
+                view: view
+            };
+
+            try {
+                const response = await fetch('/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ projectData, path: currentPath, is_autosave: false })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('Project saved!');
+                    loadMapsList(currentPath);
+                } else {
+                    alert(`Save failed: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                alert('Network error while saving.');
+            }
+        }
+        
+        async function autoSaveProject() {
+            const projectData = {
+                boxes: boxes.map(b => ({ id: b.id, left: b.element.style.left, top: b.element.style.top, width: b.element.style.width, height: b.element.style.height, title: b.title, brief: b.brief, content: b.content })),
+                lines: lines.map(l => ({ startBoxId: l.startBoxId, endBoxId: l.endBoxId, curvature: l.curvature, label: l.label })),
+                nextBoxId: nextBoxId,
+                view: view
+            };
+            try {
+                const response = await fetch('/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ projectData, path: currentPath, is_autosave: true })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    console.log('Autosave successful:', result.filename);
+                    if (document.visibilityState === 'visible') { // Only refresh list if tab is active
+                        loadMapsList(currentPath);
+                    }
+                } else {
+                    console.error('Autosave failed:', result.error);
+                }
+            } catch (error) {
+                console.error('Autosave network error:', error);
+            }
+        }
+
+        async function loadProjectFromServer(filename) {
+            const fullPath = currentPath ? `${currentPath}/${filename}` : filename;
+            try {
+                const response = await fetch(`/load/${fullPath}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const projectData = await response.json();
+                restoreState(projectData);
+                history = []; // Clear history after loading a new project
+                actionCounter = 0;
+                saveState(); // Save the loaded state as the initial state for undo
+            } catch (error) {
+                console.error('Load error:', error);
+                alert('Failed to load project.');
+            }
+        }
+
+        async function deleteItem(name, type) {
+            if (!confirm(`Are you sure you want to delete ${type} "${name}"? This cannot be undone.`)) {
+                return;
+            }
+            try {
+                const response = await fetch('/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: currentPath, name, type })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    loadMapsList(currentPath);
+                } else {
+                    alert(`Delete failed: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Network error during deletion.');
+            }
+        }
+
+        async function loadMapsList(path = '') {
+            try {
+                const response = await fetch(`/maps?path=${encodeURIComponent(path)}`);
+                const data = await response.json();
+
+                if (!data.items) {
+                    alert(`Error: ${data.error || 'Could not load file list.'}`);
+                    return;
+                }
+
+                currentPath = data.path;
+                const mapsList = document.getElementById('maps-list');
+                const pathDisplay = document.querySelector('#maps-panel .path-display');
+                pathDisplay.textContent = `/ ${currentPath}`;
+                mapsList.innerHTML = '';
+
+                // Add '..' (back) link if not in root
+                if (currentPath) {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span class="back-icon">↩️</span> ..`;
+                    li.style.cursor = 'pointer';
+                    li.onclick = () => {
+                        const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+                        loadMapsList(parentPath);
+                    };
+                    mapsList.appendChild(li);
+                }
+                
+                if (data.items.length === 0) {
+                     if (!currentPath) mapsList.innerHTML += '<li>No saved projects</li>';
+                } else {
+                    data.items.forEach(item => {
+                        const li = document.createElement('li');
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'delete-btn';
+                        deleteBtn.textContent = '×';
+                        deleteBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            deleteItem(item.name, item.type);
+                        };
+
+                        const text = document.createElement('span');
+                        
+                        if (item.type === 'folder') {
+                            text.innerHTML = `<span class="folder-icon">📁</span> ${item.name}`;
+                            li.style.cursor = 'pointer';
+                            li.onclick = () => loadMapsList(currentPath ? `${currentPath}/${item.name}` : item.name);
+                        } else {
+                            li.style.cursor = 'pointer';
+                            if (item.name.startsWith('autosave_')) {
+                                text.innerHTML = `<span class="file-icon">📄</span> [Auto] ${item.name.substring(9)}`;
+                            } else {
+                                text.innerHTML = `<span class="file-icon">📄</span> ${item.name}`;
+                            }
+                            li.onclick = () => loadProjectFromServer(item.name);
+                        }
+                        
+                        li.appendChild(text);
+                        li.appendChild(deleteBtn);
+                        mapsList.appendChild(li);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading maps list:', error);
+                alert('Network error while loading file list.');
+            }
+        }
+
+        function saveState() {
+            const state = {
+                boxes: JSON.parse(JSON.stringify(boxes.map(b => ({
+                    id: b.id,
+                    left: b.element.style.left,
+                    top: b.element.style.top,
+                    width: b.element.style.width,
+                    height: b.element.style.height,
+                    title: b.title,
+                    brief: b.brief,
+                    content: b.content
+                })))),
+                lines: JSON.parse(JSON.stringify(lines.map(l => ({
+                    startBoxId: l.startBoxId,
+                    endBoxId: l.endBoxId,
+                    controlPoint: l.controlPoint,
+                    label: l.label
+                })))),
+                nextBoxId: nextBoxId,
+                view: view
+            };
+
+            // If we are not at the end of history, slice it
+            if (historyIndex < history.length - 1) {
+                history = history.slice(0, historyIndex + 1);
+            }
+
+            history.push(state);
+            if (history.length > MAX_HISTORY) {
+                history.shift(); // Keep history size fixed
+            }
+            historyIndex = history.length - 1;
+
+            actionCounter++;
+            if (actionCounter >= 10) {
+                autoSaveProject();
+                actionCounter = 0;
+            }
+        }
+
+        function restoreState(state) {
+             // Clear current project
+            world.innerHTML = '';
+            svgGroup.innerHTML = ''; // Clear SVG group
+            boxes.forEach(b => b.resizeObserver.disconnect());
+            boxes = [];
+            lines = [];
+
+            // Load new project from state
+            nextBoxId = state.nextBoxId || 1;
+            
+            if (state.view) {
+                view.x = state.view.x || 0;
+                view.y = state.view.y || 0;
+                view.scale = state.view.scale || 1;
+            } else {
+                // Reset to default if no view is saved
+                view.x = 0;
+                view.y = 0;
+                view.scale = 1;
+            }
+            applyViewTransform();
+
+            state.boxes.forEach(boxData => {
+                // This is largely copied from loadProject, should be refactored
+                // into a common function in a real application.
+                createBoxFromData(boxData, false);
+            });
+
+            state.lines.forEach(lineData => {
+                const startBox = boxes.find(b => b.id === lineData.startBoxId)?.element;
+                const endBox = boxes.find(b => b.id === lineData.endBoxId)?.element;
+                if (startBox && endBox) {
+                    const newLine = createLine(startBox, endBox, false);
+                    newLine.controlPoint = lineData.controlPoint || null;
+                    newLine.curvature = lineData.curvature || 0;
+                    newLine.label = lineData.label || '';
+                    newLine.labelOffset = lineData.labelOffset || { x: 0, y: 0 };
+                    
+                    if (newLine.label) {
+                        createLabelElementsForLine(newLine);
+                    }
+
+                    updateLineElement(newLine);
+                }
+            });
+        }
+
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                const state = JSON.parse(JSON.stringify(history[historyIndex]));
+                restoreState(state);
+            }
+        }
+
+        function redo() {
+            if (historyIndex < history.length - 1) {
+                historyIndex++;
+                const state = JSON.parse(JSON.stringify(history[historyIndex]));
+                restoreState(state);
+            }
+        }
+
+        function applyViewTransform() {
+            const transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+            world.style.transform = transform;
+            svgGroup.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.scale})`);
+        }
+
+        function deselectAll() {
+            if (startNodeForConnection) {
+                startNodeForConnection.classList.remove('connection-start');
+                startNodeForConnection = null;
+            }
+            if (selectedItem) {
+                if (selectedItem.type === 'line') {
+                    const lineData = lines.find(l => l.element === selectedItem.element);
+                    if(lineData) {
+                        lineData.handle.style.display = 'none';
+                        lineData.element.setAttribute('marker-end', 'url(#arrow-head)');
+                    }
+                } else if (selectedItem.type === 'box') {
+                    // Hide relations when deselecting a box
+                    const relationsEl = selectedItem.element.querySelector('.box-relations');
+                    if (relationsEl) {
+                        relationsEl.classList.remove('visible');
+                    }
+                }
+                selectedItem.element.classList.remove('selected');
+                selectedItem = null;
+            }
+        }
+
+        function createBox(worldX, worldY, save = true) {
+            const boxId = nextBoxId++;
+            const boxData = {
+                id: boxId,
+                left: `${worldX}px`,
+                top: `${worldY}px`,
+                width: '220px',
+                height: '120px',
+                title: `标题 ${boxId}`,
+                brief: '这是简介...',
+                content: '这是可以悬停查看的详细正文内容。'
+            };
+            createBoxFromData(boxData, save);
+        }
+
+        function createBoxFromData(boxData, save = true) {
+            const box = document.createElement('div');
+            box.className = 'box';
+            box.dataset.id = boxData.id;
+            box.style.left = boxData.left;
+            box.style.top = boxData.top;
+            box.style.width = boxData.width;
+            box.style.height = boxData.height;
+
+            box.innerHTML = `
+                <div class="resize-handle"></div>
+                <div class="box-title" contenteditable="true">${boxData.title}</div>
+                <div class="box-brief" contenteditable="true">${boxData.brief}</div>
+                <div class="box-content" contenteditable="true">${boxData.content}</div>
+                <div class="box-relations">
+                    <h4>关系</h4>
+                    <div><strong>父集:</strong><div class="parents-list">无</div></div>
+                    <div><strong>子集:</strong><div class="children-list">无</div></div>
+                </div>
+                <button class="focus-btn">F</button>
+            `;
+            
+            world.appendChild(box);
+            
+            const titleEl = box.querySelector('.box-title');
+            const briefEl = box.querySelector('.box-brief');
+            const contentEl = box.querySelector('.box-content');
+
+            const stopPropagation = (e) => e.stopPropagation();
+            [titleEl, briefEl, contentEl].forEach(el => {
+                el.addEventListener('mousedown', stopPropagation);
+                el.addEventListener('dblclick', stopPropagation);
+            });
+
+            const handlePaste = (e) => {
+                e.preventDefault();
+                const text = e.clipboardData.getData('text/plain');
+                document.execCommand('insertText', false, text);
+            };
+
+            [titleEl, briefEl].forEach(el => {
+                el.addEventListener('paste', handlePaste);
+            });
+
+            const boxId = boxData.id;
+
+            titleEl.addEventListener('input', () => {
+                const currentBox = boxes.find(b => b.id === boxId);
+                if (!currentBox) return;
+
+                const newTitle = titleEl.innerText.trim();
+                currentBox.title = newTitle; // Update title in data model first
+
+                const matchingBox = boxes.find(b => b.id !== boxId && b.title === newTitle);
+                if (matchingBox) {
+                    // If a match is found, sync data and view
+                    currentBox.brief = matchingBox.brief;
+                    currentBox.content = matchingBox.content;
+                    briefEl.innerText = matchingBox.brief;
+                    contentEl.innerText = matchingBox.content;
+                }
+                
+                updateAllRelations();
+                saveState();
+            });
+
+            const updateBriefAndContent = () => {
+                const currentBox = boxes.find(b => b.id === boxId);
+                if (currentBox) {
+                    currentBox.brief = briefEl.innerText;
+                    currentBox.content = contentEl.innerText;
+                    saveState();
+                }
+            };
+            briefEl.addEventListener('input', updateBriefAndContent);
+            contentEl.addEventListener('input', updateBriefAndContent);
+
+            const resizeObserver = new ResizeObserver(() => {
+                updateConnectedLines(box);
+            });
+            resizeObserver.observe(box);
+            
+            boxes.push({ 
+                element: box, 
+                id: boxId, 
+                title: boxData.title, 
+                brief: boxData.brief, 
+                content: boxData.content, 
+                resizeObserver 
+            });
+
+            addBoxBehaviors(box);
+
+            if (save) {
+                saveState();
+            }
+            return box;
+        }
+
+        function getRandomColor() {
+            const colors = [
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
+                '#FFEEAD', '#D4A5A5', '#9B59B6', '#3498DB',
+                '#E67E22', '#2ECC71', '#1ABC9C', '#F1C40F'
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        function createLine(startBox, endBox, save = true) {
+            const lineId = `line-${Date.now()}`;
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute('id', lineId);
+            path.setAttribute('class', 'line');
+            path.setAttribute('marker-end', 'url(#arrow-head)');
+            path.style.stroke = getRandomColor();
+
+            // 创建更宽的透明线条作为点击区域
+            const hitbox = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            hitbox.setAttribute('class', 'line-hitbox');
+            hitbox.setAttribute('id', `${lineId}-hitbox`);
+
+            const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            handle.setAttribute('class', 'line-handle');
+            handle.style.display = 'none';
+
+            svgGroup.appendChild(hitbox); // 先添加hitbox
+            svgGroup.appendChild(path); // 再添加实际的线条
+            svgGroup.appendChild(handle);
+            
+            const startBoxId = parseInt(startBox.dataset.id, 10);
+            const endBoxId = parseInt(endBox.dataset.id, 10);
+            
+            const lineData = { 
+                element: path,
+                hitbox: hitbox,
+                id: lineId,
+                startBoxId, 
+                endBoxId,
+                handle,
+                label: '',
+                controlPoint: null,
+                color: path.style.stroke
+            };
+            lines.push(lineData);
+
+            updateLineElement(lineData);
+
+            const handleDblClick = (e) => {
+                e.stopPropagation();
+                
+                if (!lineData.text) {
+                    createLabelElementsForLine(lineData);
+                }
+
+                const newLabel = prompt("输入连线标签:", lineData.label);
+                
+                if (newLabel !== null) {
+                    lineData.label = newLabel;
+                    updateLineElement(lineData);
+                    saveState();
+
+                    if (!newLabel && lineData.text) {
+                        lineData.text.remove();
+                        lineData.textBg.remove();
+                        delete lineData.text;
+                        delete lineData.textBg;
+                    }
+                }
+            };
+
+            path.addEventListener('dblclick', handleDblClick);
+            hitbox.addEventListener('dblclick', handleDblClick);
+
+            const startLineDrag = (e) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+
+                // --- NEW: Select the line on mousedown ---
+                deselectAll();
+                selectedItem = { type: 'line', element: path };
+                path.classList.add('selected');
+                path.setAttribute('marker-end', 'url(#arrow-head-selected)');
+                handle.style.display = 'block';
+                // --- End new section ---
+
+                const onMouseMove = (moveEvent) => {
+                    const svgPoint = svgLayer.createSVGPoint();
+                    svgPoint.x = moveEvent.clientX;
+                    svgPoint.y = moveEvent.clientY;
+                    const transformedPoint = svgPoint.matrixTransform(svgGroup.getScreenCTM().inverse());
+                    
+                    lineData.controlPoint = { x: transformedPoint.x, y: transformedPoint.y };
+                    
+                    updateLineElement(lineData);
+                };
+                const onMouseUp = () => {
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                    if (lineData.controlPoint) {
+                        saveState();
+                    }
+                };
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+            };
+
+            path.addEventListener('mousedown', startLineDrag);
+            hitbox.addEventListener('mousedown', startLineDrag);
+            handle.addEventListener('mousedown', startLineDrag);
+
+            if (save) {
+                saveState();
+            }
+            updateRelations(startBox);
+            updateRelations(endBox);
+            return lineData;
+        }
+
+        function getIntersectionPoint(sourceBox, targetPoint) {
+            const w = sourceBox.offsetWidth;
+            const h = sourceBox.offsetHeight;
+            const x = parseFloat(sourceBox.style.left);
+            const y = parseFloat(sourceBox.style.top);
+            
+            const sourceCenter = { x: x + w / 2, y: y + h / 2 };
+
+            const dx = targetPoint.x - sourceCenter.x;
+            const dy = targetPoint.y - sourceCenter.y;
+
+            let ix, iy;
+            const slope = dy / dx;
+
+            if (Math.abs(dy) < Math.abs(dx) * (h / w)) {
+                // Intersects with left or right side
+                if (dx > 0) { // Right side
+                    ix = x + w;
+                    iy = sourceCenter.y + slope * (w / 2);
+                } else { // Left side
+                    ix = x;
+                    iy = sourceCenter.y - slope * (w / 2);
+                }
+            } else {
+                // Intersects with top or bottom side
+                if (dy > 0) { // Bottom side
+                    iy = y + h;
+                    ix = sourceCenter.x + (h / 2) / slope;
+                } else { // Top side
+                    iy = y;
+                    ix = sourceCenter.x - (h / 2) / slope;
+                }
+            }
+            return { x: ix, y: iy };
+        }
+
+        function getPointAtLength(p0, p1, p2, t) {
+            const x = Math.pow(1 - t, 2) * p0.x + 2 * (1 - t) * t * p1.x + Math.pow(t, 2) * p2.x;
+            const y = Math.pow(1 - t, 2) * p0.y + 2 * (1 - t) * t * p1.y + Math.pow(t, 2) * p2.y;
+            const dx = 2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
+            const dy = 2 * (1 - t) * (p1.y - p0.y) + 2 * t * (p2.y - p1.y);
+            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            return { x, y, angle };
+        }
+
+        function updateLineElement(lineData) {
+            const startBox = boxes.find(b => b.id === lineData.startBoxId)?.element;
+            const endBox = boxes.find(b => b.id === lineData.endBoxId)?.element;
+            if (!startBox || !endBox) return;
+
+            const startCenter = { 
+                x: parseFloat(startBox.style.left) + startBox.offsetWidth / 2, 
+                y: parseFloat(startBox.style.top) + startBox.offsetHeight / 2 
+            };
+            const endCenter = {
+                x: parseFloat(endBox.style.left) + endBox.offsetWidth / 2,
+                y: parseFloat(endBox.style.top) + endBox.offsetHeight / 2
+            };
+
+            const startPoint = getIntersectionPoint(startBox, endCenter);
+            const endPoint = getIntersectionPoint(endBox, startCenter);
+
+            const startX = startPoint.x;
+            const startY = startPoint.y;
+            const endX = endPoint.x;
+            const endY = endPoint.y;
+
+            const dx = endX - startX;
+            const dy = endY - startY;
+
+            let controlPointX, controlPointY;
+
+            if (lineData.controlPoint) {
+                controlPointX = lineData.controlPoint.x;
+                controlPointY = lineData.controlPoint.y;
+            } else {
+                const midX = (startX + endX) / 2;
+                const midY = (startY + endY) / 2;
+                const normalX = -dy;
+                const normalY = dx;
+                const curvature = 0.2; 
+                controlPointX = midX + normalX * curvature;
+                controlPointY = midY + normalY * curvature;
+            }
+
+            const pathD = `M ${startX} ${startY} Q ${controlPointX} ${controlPointY} ${endX} ${endY}`;
+            
+            lineData.element.setAttribute('d', pathD);
+            lineData.hitbox.setAttribute('d', pathD);
+
+            if (lineData.text) {
+                lineData.text.textContent = lineData.label;
+                const p0 = { x: startX, y: startY };
+                const p1 = { x: controlPointX, y: controlPointY };
+                const p2 = { x: endX, y: endY };
+                const midPointData = getPointAtLength(p0, p1, p2, 0.5);
+
+                let angle = midPointData.angle;
+                if (angle > 90 || angle < -90) {
+                    angle += 180;
+                }
+                
+                const labelOffset = lineData.labelOffset || { x: 0, y: 0 };
+                const finalLabelX = midPointData.x + labelOffset.x;
+                const finalLabelY = midPointData.y - 7 + labelOffset.y;
+
+                const transform = `translate(${finalLabelX}, ${finalLabelY}) rotate(${angle})`;
+                lineData.labelGroup.setAttribute('transform', transform);
+
+                // The background is positioned relative to the group, so it just needs width/height
+                setTimeout(() => {
+                    if (!lineData.text) return;
+                    const textBBox = lineData.text.getBBox();
+                    lineData.textBg.setAttribute('x', textBBox.x - 4);
+                    lineData.textBg.setAttribute('y', textBBox.y - 2);
+                    lineData.textBg.setAttribute('width', textBBox.width + 8);
+                    lineData.textBg.setAttribute('height', textBBox.height + 4);
+                }, 0);
+            }
+
+            lineData.handle.setAttribute('cx', controlPointX);
+            lineData.handle.setAttribute('cy', controlPointY);
+        }
+
+        function updateConnectedLines(box) {
+            const boxId = parseInt(box.dataset.id, 10);
+            lines.forEach(line => {
+                if (line.startBoxId === boxId || line.endBoxId === boxId) {
+                    updateLineElement(line);
+                }
+            });
+        }
+
+        // Pan and Zoom Listeners
+        visualization.addEventListener('mousedown', (e) => {
+            // Robust check: only pan if the click is not on a box, line, or handle.
+            if (e.button !== 0 || e.target.closest('.box, path, circle') || isConnectionModeActive) {
+                return;
+            }
+
+            e.preventDefault();
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const startViewX = view.x;
+            const startViewY = view.y;
+
+            function onMouseMove(moveEvent) {
+                view.x = startViewX + (moveEvent.clientX - startX);
+                view.y = startViewY + (moveEvent.clientY - startY);
+                applyViewTransform();
+            }
+            function onMouseUp() {
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+            }
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+        });
+
+        visualization.addEventListener('wheel', (e) => {
+            if (!e.ctrlKey) return;
+            e.preventDefault();
+            const visRect = visualization.getBoundingClientRect();
+            const mouseX = e.clientX - visRect.left;
+            const mouseY = e.clientY - visRect.top;
+            const mouseWorldX = (mouseX - view.x) / view.scale;
+            const mouseWorldY = (mouseY - view.y) / view.scale;
+
+            const scaleFactor = 1.1;
+            if (e.deltaY < 0) {
+                view.scale *= scaleFactor;
+            } else {
+                view.scale /= scaleFactor;
+            }
+            view.scale = Math.max(0.1, Math.min(view.scale, 5));
+
+            view.x = mouseX - mouseWorldX * view.scale;
+            view.y = mouseY - mouseWorldY * view.scale;
+            applyViewTransform();
+        });
+
+        // Other Listeners
+        visualization.addEventListener('dblclick', (event) => {
+            if (event.target === visualization) {
+                const visRect = visualization.getBoundingClientRect();
+                const screenX = event.clientX - visRect.left;
+                const screenY = event.clientY - visRect.top;
+                const worldX = (screenX - view.x) / view.scale;
+                const worldY = (screenY - view.y) / view.scale;
+                createBox(worldX, worldY);
+            }
+        });
+
+        visualization.addEventListener('click', (event) => {
+            if (event.target === visualization) {
+                if (isFocusModeActive) {
+                    clearFocus();
+                } else {
+                    deselectAll();
+                }
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            const activeElement = document.activeElement;
+            const isEditing = activeElement && activeElement.isContentEditable;
+
+            if (!isEditing && (e.key === 'Delete' || e.key === 'Backspace') && selectedItem) {
+                e.preventDefault(); // Prevent browser from going back, etc.
+                if (selectedItem.type === 'line') {
+                    deleteLine(selectedItem.element);
+                } else if (selectedItem.type === 'box') {
+                    deleteBox(selectedItem.element);
+                }
+                selectedItem = null;
+                saveState();
+            }
+
+            if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                undo();
+            }
+
+            if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                redo();
+            }
+
+            if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+                const activeElement = document.activeElement;
+                const isEditingTextBox = activeElement && activeElement.isContentEditable && activeElement.closest('.box');
+
+                // Only trigger custom copy if the user is NOT editing text inside a box,
+                // and a box is actually selected in the application.
+                if (!isEditingTextBox && selectedItem && selectedItem.type === 'box') {
+                    e.preventDefault(); // Prevent default browser action (like copying the whole page)
+                    copySelection();
+                }
+                // Otherwise, do nothing. This allows the browser's default behavior
+                // for copying text from the editable fields to work as expected.
+            }
+
+            if (e.ctrlKey && e.key.toLowerCase() === 'v') {
+                const activeElement = document.activeElement;
+                const isEditingTextBox = activeElement && activeElement.isContentEditable && activeElement.closest('.box');
+
+                // Only trigger custom paste if the user is NOT editing text inside a box.
+                if (!isEditingTextBox) {
+                    e.preventDefault(); // Prevent default browser action (e.g., trying to paste text on the page)
+                    pasteFromClipboard();
+                }
+                // Otherwise, do nothing. This allows the browser's default behavior
+                // for pasting text into the editable fields to work as expected.
+            }
+        });
+
+        visualization.addEventListener('mousemove', (e) => {
+            const visRect = visualization.getBoundingClientRect();
+            const screenX = e.clientX - visRect.left;
+            const screenY = e.clientY - visRect.top;
+            mousePosition = {
+                x: (screenX - view.x) / view.scale,
+                y: (screenY - view.y) / view.scale
+            };
+        });
+
+        function deleteBox(box) {
+            const boxId = parseInt(box.dataset.id, 10);
+            const boxIndex = boxes.findIndex(b => b.id === boxId);
+            if (boxIndex === -1) return;
+            
+            const boxData = boxes[boxIndex];
+
+            // Disconnect the observer to prevent memory leaks
+            boxData.resizeObserver.disconnect();
+
+            // Remove lines connected to this box
+            const connectedLines = lines.filter(l => l.startBoxId === boxId || l.endBoxId === boxId);
+            const neighbors = [];
+            connectedLines.forEach(l => {
+                const neighborId = l.startBoxId === boxId ? l.endBoxId : l.startBoxId;
+                const neighborBox = boxes.find(b => b.id === neighborId)?.element;
+                if(neighborBox) neighbors.push(neighborBox);
+                deleteLine(l.element, false); // don't save state yet
+            });
+
+            // Remove the box element
+            box.remove();
+
+            // Remove from boxes array
+            boxes.splice(boxIndex, 1);
+
+            // Now update relations for neighbors
+            neighbors.forEach(n => updateRelations(n));
+
+            if (save) saveState();
+        }
+
+        function deleteLine(lineToDelete, save = true) {
+            const lineIndex = lines.findIndex(l => l.element === lineToDelete);
+            if (lineIndex === -1) return;
+            const lineData = lines[lineIndex];
+
+            const startBox = boxes.find(b => b.id === lineData.startBoxId)?.element;
+            const endBox = boxes.find(b => b.id === lineData.endBoxId)?.element;
+
+            lineData.handle.remove();
+            if (lineData.text) lineData.text.remove();
+            if (lineData.textBg) lineData.textBg.remove();
+            lineToDelete.remove();
+            lines.splice(lineIndex, 1);
+
+            if (startBox) updateRelations(startBox);
+            if (endBox) updateRelations(endBox);
+            if (save) saveState();
+        }
+
+        function updateRelations(box) {
+            if (!box) {
+                // Clear all relation lists if no box is selected
+                document.querySelectorAll('.parents-list, .children-list').forEach(el => el.innerHTML = '无');
+                return;
+            }
+
+            const boxId = parseInt(box.dataset.id, 10);
+            const parentsList = box.querySelector('.parents-list');
+            const childrenList = box.querySelector('.children-list');
+
+            if (!parentsList || !childrenList) return;
+
+            parentsList.innerHTML = '';
+            childrenList.innerHTML = '';
+
+            const parentLines = lines.filter(l => l.endBoxId === boxId)
+                                 .map(l => boxes.find(b => b.id === l.startBoxId)?.title || 'Unknown');
+            
+            const childLines = lines.filter(l => l.startBoxId === boxId)
+                                  .map(l => boxes.find(b => b.id === l.endBoxId)?.title || 'Unknown');
+
+            parentsList.innerHTML = parentLines.join('<br>') || '无';
+            childrenList.innerHTML = childLines.join('<br>') || '无';
+        }
+
+        function updateAllRelations() {
+            boxes.forEach(box => updateRelations(box.element));
+        }
+
+        // Initial load
+        loadMapsList();
+
+        document.getElementById('connect-btn').addEventListener('click', toggleConnectionMode);
+        document.getElementById('save-btn').addEventListener('click', saveProject);
+        document.getElementById('export-html-btn').addEventListener('click', exportToHtml);
+        document.getElementById('new-folder-btn').addEventListener('click', createFolder);
+        document.getElementById('undo-btn').addEventListener('click', undo);
+        document.getElementById('redo-btn').addEventListener('click', redo);
+        document.getElementById('clear-focus-btn').addEventListener('click', clearFocus);
+
+        function getDescendants(nodeId, allLines) {
+            const children = new Set();
+            const toVisit = [nodeId];
+            while (toVisit.length > 0) {
+                const currentId = toVisit.pop();
+                allLines.forEach(line => {
+                    if (line.startBoxId === currentId && !children.has(line.endBoxId)) {
+                        children.add(line.endBoxId);
+                        toVisit.push(line.endBoxId);
+                    }
+                });
+            }
+            return children;
+        }
+
+        function getAncestors(nodeId, allLines) {
+            const parents = new Set();
+            const toVisit = [nodeId];
+            while (toVisit.length > 0) {
+                const currentId = toVisit.pop();
+                allLines.forEach(line => {
+                    if (line.endBoxId === currentId && !parents.has(line.startBoxId)) {
+                        parents.add(line.startBoxId);
+                        toVisit.push(line.startBoxId);
+                    }
+                });
+            }
+            return parents;
+        }
+
+        function focusOnNode(nodeId) {
+            if (!nodeId) return;
+            isFocusModeActive = true;
+            document.getElementById('clear-focus-btn').style.display = 'inline-block';
+
+            const ancestors = getAncestors(nodeId, lines);
+            const descendants = getDescendants(nodeId, lines);
+            
+            const focusedIds = new Set([nodeId, ...ancestors, ...descendants]);
+
+            boxes.forEach(box => {
+                box.element.classList.toggle('dimmed', !focusedIds.has(box.id));
+                box.element.classList.toggle('focused', focusedIds.has(box.id));
+            });
+
+            lines.forEach(line => {
+                const isFocused = focusedIds.has(line.startBoxId) && focusedIds.has(line.endBoxId);
+                line.element.classList.toggle('dimmed', !isFocused);
+                line.hitbox.classList.toggle('dimmed', !isFocused);
+            });
+        }
+
+        function clearFocus() {
+            isFocusModeActive = false;
+            document.getElementById('clear-focus-btn').style.display = 'none';
+
+            boxes.forEach(box => {
+                box.element.classList.remove('focused', 'dimmed');
+            });
+            lines.forEach(line => {
+                line.element.classList.remove('focused', 'dimmed');
+                line.hitbox.classList.remove('focused', 'dimmed');
+            });
+        }
+
+        function toggleConnectionMode() {
+            isConnectionModeActive = !isConnectionModeActive;
+            document.getElementById('connect-btn').classList.toggle('active', isConnectionModeActive);
+            visualization.classList.toggle('connection-mode', isConnectionModeActive);
+            
+            if (!isConnectionModeActive && startNodeForConnection) {
+                startNodeForConnection.classList.remove('connection-start');
+                startNodeForConnection = null;
+            }
+            deselectAll();
+        }
+
+        function addBoxBehaviors(box) {
+            const boxId = parseInt(box.dataset.id);
+            const resizeHandle = box.querySelector('.resize-handle');
+            const focusBtn = box.querySelector('.focus-btn');
+
+            focusBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                focusOnNode(boxId);
+            });
+            
+            box.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (isConnectionModeActive) {
+                    if (!startNodeForConnection) {
+                        startNodeForConnection = box;
+                        box.classList.add('connection-start');
+                    } else if (startNodeForConnection !== box) {
+                        createLine(startNodeForConnection, box);
+                        startNodeForConnection.classList.remove('connection-start');
+                        startNodeForConnection = null;
+                    }
+                } else {
+                     deselectAll();
+                     selectedItem = { type: 'box', element: box };
+                     box.classList.add('selected');
+                }
+            });
+
+            const boxMouseDown = (e) => {
+                if (e.target.isContentEditable || e.target === resizeHandle || isConnectionModeActive) return;
+                e.stopPropagation();
+                
+                const startX = e.clientX, startY = e.clientY;
+                const offsetX = e.clientX / view.scale - parseFloat(box.style.left);
+                const offsetY = e.clientY / view.scale - parseFloat(box.style.top);
+                let hasDragged = false;
+
+                const mouseMove = (moveEvent) => {
+                    const dx = moveEvent.clientX - startX, dy = moveEvent.clientY - startY;
+                    if (!hasDragged && Math.sqrt(dx * dx + dy * dy) > 5) hasDragged = true;
+                    if (hasDragged) {
+                        box.style.left = `${moveEvent.clientX / view.scale - offsetX}px`;
+                        box.style.top = `${moveEvent.clientY / view.scale - offsetY}px`;
+                        updateConnectedLines(box);
+                    }
+                };
+
+                const mouseUp = () => {
+                    window.removeEventListener('mousemove', mouseMove);
+                    if (hasDragged) saveState();
+                };
+                window.addEventListener('mousemove', mouseMove);
+                window.addEventListener('mouseup', mouseUp, { once: true });
+            };
+            box.addEventListener('mousedown', boxMouseDown);
+            
+            const resizeStart = (e) => {
+                e.stopPropagation();
+                const startWidth = box.offsetWidth, startHeight = box.offsetHeight;
+                const startMouseX = e.clientX, startMouseY = e.clientY;
+                const onResizeMove = (moveEvent) => {
+                    box.style.width = `${Math.max(100, startWidth + (moveEvent.clientX - startMouseX) / view.scale)}px`;
+                    box.style.height = `${Math.max(80, startHeight + (moveEvent.clientY - startMouseY) / view.scale)}px`;
+                    updateConnectedLines(box);
+                };
+                const onResizeEnd = () => {
+                    window.removeEventListener('mousemove', onResizeMove);
+                    saveState();
+                };
+                window.addEventListener('mousemove', onResizeMove);
+                window.addEventListener('mouseup', onResizeEnd, { once: true });
+            };
+            resizeHandle.addEventListener('mousedown', resizeStart);
+            updateAllRelations();
+        }
+
+        async function exportToHtml() {
+            // 0. Save the project first
+            await saveProject();
+
+            // 1. Gather current state
+            const projectData = {
+                boxes: boxes.map(b => ({ id: b.id, left: b.element.style.left, top: b.element.style.top, width: b.element.style.width, height: b.element.style.height, title: b.title, brief: b.brief, content: b.content })),
+                lines: lines.map(l => ({ startBoxId: l.startBoxId, endBoxId: l.endBoxId, curvature: l.curvature, label: l.label })),
+                nextBoxId: nextBoxId,
+                view: view
+            };
+
+            // 2. Clone the current document to create the export file content
+            const newDoc = document.cloneNode(true);
+            
+            // 3. Update title and remove server-dependent controls
+            const defaultName = "mind-map";
+            let userInput = prompt("请输入导出的思维导图名称:", "mind-map");
+            
+            let filename, pageTitle;
+            if (!userInput) {
+                filename = defaultName + ".html";
+                pageTitle = defaultName;
+            } else {
+                filename = userInput.toLowerCase().endsWith('.html') ? userInput : userInput + '.html';
+                pageTitle = userInput.toLowerCase().endsWith('.html') ? userInput.slice(0, -5) : userInput;
+            }
+
+            newDoc.querySelector('title').textContent = pageTitle + ' (导出)';
+            newDoc.querySelector('h1').textContent = pageTitle;
+            newDoc.getElementById('project-controls')?.remove();
+            newDoc.getElementById('maps-panel')?.remove();
+            newDoc.getElementById('instructions')?.remove();
+
+            // Disable content editing on all boxes in the exported file
+            newDoc.querySelectorAll('.box-title, .box-brief, .box-content').forEach(el => {
+                el.removeAttribute('contenteditable');
+            });
+            
+            // 4. Create and add the data injection script
+            const injectionScript = newDoc.createElement('script');
+            injectionScript.textContent = `
+                document.addEventListener('DOMContentLoaded', () => {
+                    const exportedData = ${JSON.stringify(projectData, null, 2)};
+                    
+                    // The main script is already in newDoc, so its functions are available
+                    restoreState(exportedData);
+                    
+                    // Disable functions that don't make sense in a static file
+                    if (typeof saveState === 'function') {
+                        window.saveState = () => {}; // Disable autosave and history recording
+                    }
+                    if (typeof saveProject === 'function') {
+                        window.saveProject = () => alert('无法在导出的文件中保存。');
+                    }
+                     if (typeof autoSaveProject === 'function') {
+                        window.autoSaveProject = () => {};
+                    }
+                    if (typeof createFolder === 'function') {
+                        window.createFolder = () => alert('无法在导出的文件中创建文件夹。');
+                    }
+                    if (typeof loadProjectFromServer === 'function') {
+                        window.loadProjectFromServer = () => alert('无法在导出的文件中加载项目。');
+                    }
+                     if (typeof deleteItem === 'function') {
+                        window.deleteItem = () => alert('无法在导出的文件中删除项目。');
+                    }
+                    if (typeof loadMapsList === 'function') {
+                        window.loadMapsList = () => {}; // Prevent trying to load file list
+                    }
+                });
+            `;
+            newDoc.body.appendChild(injectionScript);
+
+            // 5. Create a Blob and trigger download
+            const htmlContent = newDoc.documentElement.outerHTML;
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function createLabelElementsForLine(lineData) {
+            const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            group.style.cursor = 'move';
+
+            const textBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            textBg.setAttribute('class', 'line-label-bg');
+            textBg.setAttribute('rx', '3');
+            textBg.setAttribute('ry', '3');
+
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute('class', 'line-label');
+            text.setAttribute('x', 0);
+            text.setAttribute('y', 0);
+
+            const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            handle.setAttribute('class', 'line-label-handle');
+            handle.setAttribute('cx', 0);
+            handle.setAttribute('cy', -10); // Position handle above the text's origin
+
+            const startDrag = (e) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const initialOffset = lineData.labelOffset || { x: 0, y: 0 };
+
+                const onMouseMove = (moveEvent) => {
+                    const dx = (moveEvent.clientX - startX) / view.scale;
+                    const dy = (moveEvent.clientY - startY) / view.scale;
+                    lineData.labelOffset = {
+                        x: initialOffset.x + dx,
+                        y: initialOffset.y + dy
+                    };
+                    updateLineElement(lineData);
+                };
+
+                const onMouseUp = () => {
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                    saveState();
+                };
+
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+            };
+
+            group.addEventListener('mousedown', startDrag);
+
+            group.appendChild(textBg);
+            group.appendChild(text);
+            group.appendChild(handle);
+            svgGroup.appendChild(group);
+
+            lineData.labelGroup = group;
+            lineData.text = text;
+            lineData.textBg = textBg;
+            lineData.labelHandle = handle;
+        }
+
+        let toastTimeout;
+        function showToast(message) {
+            const toast = document.getElementById('toast-notification');
+            toast.textContent = message;
+            toast.classList.add('show');
+
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000); // Hide after 3 seconds
+        }
+
+        function copySelection() {
+            if (!selectedItem || selectedItem.type !== 'box') {
+                return; // Can only copy boxes
+            }
+            const rootBox = boxes.find(b => b.element === selectedItem.element);
+            if (!rootBox) return;
+
+            const rootId = rootBox.id;
+            const descendantIds = getDescendants(rootId, lines);
+            const idsToCopy = new Set([rootId, ...descendantIds]);
+
+            const boxesToCopy = boxes
+                .filter(b => idsToCopy.has(b.id))
+                .map(b => ({ // Deep copy relevant data
+                    id: b.id,
+                    left: b.element.style.left,
+                    top: b.element.style.top,
+                    width: b.element.style.width,
+                    height: b.element.style.height,
+                    title: b.title,
+                    brief: b.brief,
+                    content: b.content
+                }));
+
+            const linesToCopy = lines
+                .filter(l => idsToCopy.has(l.startBoxId) && idsToCopy.has(l.endBoxId))
+                .map(l => ({ // Deep copy relevant data
+                    startBoxId: l.startBoxId,
+                    endBoxId: l.endBoxId,
+                    controlPoint: l.controlPoint ? JSON.parse(JSON.stringify(l.controlPoint)) : null,
+                    label: l.label,
+                    labelOffset: l.labelOffset ? JSON.parse(JSON.stringify(l.labelOffset)) : { x: 0, y: 0 }
+                }));
+
+            if (boxesToCopy.length > 0) {
+                clipboard = {
+                    boxes: boxesToCopy,
+                    lines: linesToCopy,
+                };
+                showToast("节点已复制到应用剪贴板");
+            }
+        }
+
+        function pasteFromClipboard() {
+            if (!clipboard || clipboard.boxes.length === 0) {
+                showToast("应用剪贴板为空");
+                return;
+            }
+
+            deselectAll();
+
+            const idMap = new Map();
+            
+            // Find the top-left corner of the entire copied group
+            const firstBox = clipboard.boxes[0];
+            const originalBasePosition = {
+                x: parseFloat(firstBox.left),
+                y: parseFloat(firstBox.top)
+            };
+
+            // Calculate the offset needed to move the group to the mouse position
+            const pasteOffset = {
+                x: mousePosition.x - originalBasePosition.x,
+                y: mousePosition.y - originalBasePosition.y
+            };
+
+            // 1. Create new boxes
+            clipboard.boxes.forEach(boxData => {
+                const newId = nextBoxId++;
+                idMap.set(boxData.id, newId);
+
+                const newBoxData = {
+                    ...boxData, // copy title, brief, content, width, height
+                    id: newId,
+                    left: `${parseFloat(boxData.left) + pasteOffset.x}px`,
+                    top: `${parseFloat(boxData.top) + pasteOffset.y}px`,
+                };
+                createBoxFromData(newBoxData, false);
+            });
+
+            // 2. Create new lines
+            clipboard.lines.forEach(lineData => {
+                const newStartId = idMap.get(lineData.startBoxId);
+                const newEndId = idMap.get(lineData.endBoxId);
+
+                if (newStartId && newEndId) {
+                    const startBox = boxes.find(b => b.id === newStartId)?.element;
+                    const endBox = boxes.find(b => b.id === newEndId)?.element;
+
+                    if (startBox && endBox) {
+                        const newLine = createLine(startBox, endBox, false); // Don't save state
+                        
+                        newLine.label = lineData.label || '';
+                        newLine.labelOffset = JSON.parse(JSON.stringify(lineData.labelOffset || { x: 0, y: 0 }));
+
+                        if (lineData.controlPoint) {
+                            newLine.controlPoint = {
+                                x: lineData.controlPoint.x + pasteOffset.x,
+                                y: lineData.controlPoint.y + pasteOffset.y,
+                            };
+                        }
+
+                        if (newLine.label) {
+                            createLabelElementsForLine(newLine);
+                        }
+                        updateLineElement(newLine);
+                    }
+                }
+            });
+
+            // 3. Save the entire paste operation as one step in history
+            saveState();
+            showToast("已从应用剪贴板粘贴");
+        }
+
+        // --- Search ---
+        const searchInput = document.getElementById('search-input');
+        const searchBtn = document.getElementById('search-btn');
+        const clearSearchBtn = document.getElementById('clear-search-btn');
+        const searchResultsPanel = document.getElementById('search-results-panel');
+        const searchResultsList = document.getElementById('search-results-list');
+        const globalTooltip = document.getElementById('descendant-tooltip-global');
+
+        globalTooltip.addEventListener('mouseenter', () => {
+            clearTimeout(tooltipHideTimeout);
+        });
+        globalTooltip.addEventListener('mouseleave', () => {
+            tooltipHideTimeout = setTimeout(() => {
+                globalTooltip.style.display = 'none';
+            }, 300);
+        });
+
+        function buildDescendantTreeHtml(nodeId) {
+            const directChildren = lines
+                .filter(line => line.startBoxId === nodeId)
+                .map(line => boxes.find(b => b.id === line.endBoxId))
+                .filter(Boolean);
+
+            if (directChildren.length === 0) {
+                return '';
+            }
+
+            let html = '<ul>';
+            directChildren.forEach(childBox => {
+                html += `<li>${childBox.title}`;
+                const nestedHtml = buildDescendantTreeHtml(childBox.id);
+                if (nestedHtml) {
+                    html += nestedHtml;
+                }
+                html += '</li>';
+            });
+            html += '</ul>';
+            return html;
+        }
+
+        function performSearch() {
+            const query = searchInput.value.toLowerCase().trim();
+            if (!query) {
+                clearSearch();
+                return;
+            }
+
+            searchResultsList.innerHTML = '';
+            
+            const matchingBoxes = boxes.filter(box => {
+                if (!query) return false;
+                // Search only by title for more precise results
+                const title = (box.title || '').toLowerCase();
+                return title.includes(query);
+            });
+
+            if (matchingBoxes.length > 0) {
+                matchingBoxes.forEach(box => {
+                    const li = document.createElement('li');
+                    li.dataset.boxId = box.id;
+                    
+                    li.addEventListener('mouseenter', () => {
+                        const treeHtml = buildDescendantTreeHtml(box.id);
+                        let tooltipContent = '';
+                        if (treeHtml) {
+                            tooltipContent = `<h4>子集:</h4>${treeHtml}`;
+                        } else {
+                            tooltipContent = '<h4>无子集</h4>';
+                        }
+                        globalTooltip.innerHTML = tooltipContent;
+
+                        const liRect = li.getBoundingClientRect();
+                        globalTooltip.style.left = `${liRect.right + 5}px`;
+                        globalTooltip.style.top = `${liRect.top}px`;
+                        globalTooltip.style.display = 'block';
+                    });
+                    
+                    li.addEventListener('mouseleave', () => {
+                        globalTooltip.style.display = 'none';
+                    });
+                    
+                    const titleSpan = document.createElement('span');
+                    titleSpan.textContent = box.title;
+                    
+                    const actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'result-actions';
+
+                    const copyBtn = document.createElement('button');
+                    copyBtn.textContent = '复制';
+                    copyBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        deselectAll();
+                        selectedItem = { type: 'box', element: box.element };
+                        box.element.classList.add('selected');
+                        copySelection();
+                        showToast(`'${box.title}' 已复制`);
+                        deselectAll();
+                    };
+                    actionsDiv.appendChild(copyBtn);
+
+                    li.appendChild(titleSpan);
+                    li.appendChild(actionsDiv);
+                    searchResultsList.appendChild(li);
+                });
+            } else {
+                searchResultsList.innerHTML = '<li>无匹配项.</li>';
+            }
+            
+            searchResultsPanel.style.display = 'block';
+            clearSearchBtn.style.display = 'inline-block';
+        }
+
+        function clearSearch() {
+            searchInput.value = '';
+            searchResultsPanel.style.display = 'none';
+            searchResultsList.innerHTML = '';
+            clearSearchBtn.style.display = 'none';
+            clearFocus();
+        }
+
+        searchBtn.addEventListener('click', performSearch);
+        clearSearchBtn.addEventListener('click', clearSearch);
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+    </script>
+</body>
+
+</html>
